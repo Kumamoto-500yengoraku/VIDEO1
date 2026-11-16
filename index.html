@@ -1,4 +1,4 @@
-html = r'''<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -837,8 +837,3 @@ $("reportList").addEventListener("click",async e => {
 </script>
 </body>
 </html>
-'''
-path = "/mnt/data/kumamoto_500yen_map_search_added.html"
-with open(path, "w", encoding="utf-8") as f:
-    f.write(html)
-print(f"作成しました: {path}\n文字数: {len(html):,}\n行数: {len(html.splitlines()):,}")

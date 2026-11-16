@@ -452,7 +452,7 @@ map.on("click", function(e) {
 
 });
 
-// 熊本県内の施設名・住所から場所を検索する
+// 施設名・住所から場所を検索する
 $("locationSearchButton").addEventListener("click", async () => {
 
  const keyword = $("locationSearch").value.trim();
@@ -465,22 +465,13 @@ $("locationSearchButton").addEventListener("click", async () => {
  const button = $("locationSearchButton");
 
  button.disabled = true;
- $("locationSearchStatus").textContent = "熊本県内で場所を検索しています…";
+ $("locationSearchStatus").textContent = "場所を検索しています…";
 
  try{
 
-  // 熊本県周辺の検索範囲を指定
-  const params = new URLSearchParams({
-   format: "jsonv2",
-   limit: "10",
-   countrycodes: "jp",
-   "accept-language": "ja",
-   viewbox: "129.8,33.2,131.4,31.8",
-   bounded: "1",
-   q: keyword
-  });
-
-  const url = "https://nominatim.openstreetmap.org/search?" + params.toString();
+  const url =
+   "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="
+   + encodeURIComponent(keyword);
 
   const response = await fetch(url);
 
@@ -490,30 +481,13 @@ $("locationSearchButton").addEventListener("click", async () => {
 
   const results = await response.json();
 
-  // 熊本県内の検索結果だけを残す
-  const kumamotoResults = results.filter(result => {
-
-   const address = result.address || {};
-
-   const prefecture =
-    address.state ||
-    address.province ||
-    address.region ||
-    "";
-
-   return prefecture.includes("熊本県");
-
-  });
-
-  if(kumamotoResults.length === 0){
+  if(results.length === 0){
    $("locationSearchStatus").textContent =
-    "熊本県内で場所が見つかりませんでした。別の名前や住所で検索してください。";
+    "場所が見つかりませんでした。別の名前や住所で検索してください。";
    return;
   }
 
-  // 最初の熊本県内の検索結果を使用
-  const result = kumamotoResults[0];
-
+  const result = results[0];
   const lat = Number(result.lat);
   const lng = Number(result.lon);
 
@@ -521,25 +495,21 @@ $("locationSearchButton").addEventListener("click", async () => {
    throw new Error("検索結果の位置情報を読み取れませんでした。");
   }
 
-  // 以前の仮ピンを削除
   if(selectedMarker){
    map.removeLayer(selectedMarker);
   }
 
-  // 検索した場所に地図を移動
   map.setView([lat,lng],17);
 
-  // 熊耳付きピンを設置
   selectedMarker = L.marker(
    [lat,lng],
    {icon:bearIcon}
   ).addTo(map);
 
   selectedMarker.bindPopup(
-   "熊本県内の検索結果です！"
+   "検索した場所を投稿地点に設定しました！"
   ).openPopup();
 
-  // 投稿フォームに位置情報と住所を自動入力
   document.querySelector('[name="lat"]').value = lat.toFixed(6);
   document.querySelector('[name="lng"]').value = lng.toFixed(6);
 
@@ -547,7 +517,7 @@ $("locationSearchButton").addEventListener("click", async () => {
    String(result.display_name || keyword).slice(0,160);
 
   $("locationSearchStatus").textContent =
-   "熊本県内の場所が見つかりました！このままスポットを投稿できます。";
+   "場所を設定しました！このままスポットを投稿できます。";
 
  }catch(err){
 
@@ -561,6 +531,8 @@ $("locationSearchButton").addEventListener("click", async () => {
  }
 
 });
+
+// Enterキーでも場所を検索できるようにする
 $("locationSearch").addEventListener("keydown", e => {
  if(e.key === "Enter"){
   e.preventDefault();

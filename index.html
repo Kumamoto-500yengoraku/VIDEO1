@@ -301,7 +301,7 @@ footer{text-align:center;color:#718078;padding:20px;font-size:12px}
 <section class="map-panel">
 <div class="map-head">
 <h2>熊本市周辺のマップ</h2>
-<button id="exportButton" class="secondary" type="button">データを書き出す</button>
+
 </div>
 <div id="map"></div>
 <p class="muted">地図上のマーカーを押すとスポットの詳細を確認できます。</p>
@@ -437,4 +437,358 @@ const $ = id => document.getElementById(id);
 const bearIcon = L.divIcon({
  className:"bear-marker",
  html:`
-  <div class="bear-pin
+  <div class="bear-pin">
+   <svg viewBox="0 0 40 52" xmlns="http://www.w3.org/2000/svg">
+
+    <!-- 黒い小さな耳 -->
+    <circle cx="9" cy="7" r="5"
+     fill="#252b28" stroke="white" stroke-width="1.5"/>
+    <circle cx="31" cy="7" r="5"
+     fill="#252b28" stroke="white" stroke-width="1.5"/>
+
+    <!-- 黒い地図ピン本体 -->
+    <path
+     d="M20 50 C16 42 4 29 4 19 C4 9 11 2 20 2 C29 2 36 9 36 19 C36 29 24 42 20 50Z"
+     fill="#252b28"
+     stroke="white"
+     stroke-width="2"
+    />
+
+    <!-- 中央の白い小さな丸 -->
+    <circle cx="20" cy="17" r="5" fill="white"/>
+
+    <!-- 左右の赤いほっぺ -->
+    <circle cx="9" cy="22" r="2.8" fill="#e34b4b"/>
+    <circle cx="31" cy="22" r="2.8" fill="#e34b4b"/>
+
+   </svg>
+  </div>
+ `,
+ iconSize:[40,52],
+ iconAnchor:[20,50],
+ popupAnchor:[0,-48]
+});
+// 地図をクリックした場所の位置情報を取得
+map.on("click", function(e) {
+
+ // 前に選択した仮マーカーを削除
+ if(selectedMarker){
+  map.removeLayer(selectedMarker);
+ }
+
+ // クリックした場所の緯度・経度
+ const lat = e.latlng.lat;
+ const lng = e.latlng.lng;
+
+ // 仮マーカーを設置
+ selectedMarker = L.marker([lat,lng]).addTo(map);
+
+ // ポップアップを表示
+ selectedMarker.bindPopup(
+  "この場所を投稿地点に設定しました！"
+ ).openPopup();
+
+ // 投稿フォームに自動入力
+ document.querySelector('[name="lat"]').value = lat.toFixed(6);
+ document.querySelector('[name="lng"]').value = lng.toFixed(6);
+
+});
+
+const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({
+ "&":"&amp;",
+ "<":"&lt;",
+ ">":"&gt;",
+ '"':"&quot;",
+ "'":"&#39;"
+}[c]));
+
+function visibleSpots(){
+ const max = Number($("budget").value);
+ const genre = $("genre").value;
+ const word = $("keyword").value.trim().toLowerCase();
+
+ return spots.filter(s =>
+  Number(s.cost) <= max &&
+  (!genre || s.genre === genre) &&
+  (!word || [s.name,s.address,s.desc].some(v =>
+   String(v || "").toLowerCase().includes(word)
+  ))
+ );
+}
+
+function render(){
+ $("budgetValue").textContent = $("budget").value;
+
+ const list = visibleSpots();
+
+ $("spotList").innerHTML = list.length
+ ? list.map(s => `
+  <article class="spot">
+   <strong>${esc(s.name)}</strong>
+   <small>${esc(s.genre)} ・ ${Number(s.cost)}円</small>
+   <p>${esc(s.desc)}</p>
+   <small>${esc(s.address)}</small>
+   <div class="spot-actions">
+    <button type="button" class="secondary" data-pan="${esc(s.id)}">地図で見る</button>
+    <button type="button" class="secondary" data-report="${esc(s.id)}">問題を報告</button>
+    ${isAdmin ? `<button type="button" class="danger" data-delete="${esc(s.id)}">削除</button>` : ""}
+   </div>
+  </article>
+ `).join("")
+ : "<p>条件に合うスポットはありません。</p>";
+
+ markers.forEach(m => map.removeLayer(m));
+ markers = [];
+
+ list.forEach(s => {
+  if(
+   s.lat != null &&
+   s.lng != null &&
+   Number.isFinite(Number(s.lat)) &&
+   Number.isFinite(Number(s.lng))
+  ){
+   const marker = L.marker(
+ [Number(s.lat),Number(s.lng)],
+ {icon:bearIcon}
+)
+    .addTo(map)
+    .bindPopup(`
+     <b>${esc(s.name)}</b><br>
+     ${esc(s.genre)}・${Number(s.cost)}円<br>
+     ${esc(s.desc)}
+    `);
+
+   markers.push(marker);
+  }
+ });
+
+ $("status").textContent = `${list.length}件のスポットを表示中`;
+}
+
+$("budget").addEventListener("input",render);
+$("genre").addEventListener("change",render);
+$("keyword").addEventListener("input",render);
+
+$("spotList").addEventListener("click",async e => {
+ const pan = e.target.dataset.pan;
+ const report = e.target.dataset.report;
+ const del = e.target.dataset.delete;
+
+ if(pan){
+  const s = spots.find(x => x.id === pan);
+
+  if(s && s.lat != null && s.lng != null){
+   map.setView([Number(s.lat),Number(s.lng)],16);
+
+   markers.forEach(m => {
+    if(
+     m.getLatLng().lat === Number(s.lat) &&
+     m.getLatLng().lng === Number(s.lng)
+    ){
+     m.openPopup();
+    }
+   });
+  }
+ }
+
+ if(report){
+  const s = spots.find(x => x.id === report);
+  const reason = prompt(`${s?.name || "このスポット"}の問題点を入力してください`);
+
+  if(reason?.trim()){
+   try{
+    await addDoc(reportsRef,{
+     spotId:report,
+     spotName:s.name,
+     reason:reason.trim(),
+     createdBy:currentUser.uid,
+     createdAt:serverTimestamp(),
+     status:"未確認"
+    });
+
+    alert("報告を送信しました。");
+   }catch(err){
+    alert("報告できませんでした："+err.message);
+   }
+  }
+ }
+
+ if(del && isAdmin && confirm("このスポットを削除しますか？")){
+  try{
+   await deleteDoc(doc(db,"spots",del));
+  }catch(err){
+   alert("削除できませんでした："+err.message);
+  }
+ }
+});
+
+$("spotForm").addEventListener("submit",async e => {
+ e.preventDefault();
+
+ if(!currentUser){
+  alert("認証中です。少し待ってから再度お試しください。");
+  return;
+ }
+
+ const f = new FormData(e.target);
+ const lat = f.get("lat");
+ const lng = f.get("lng");
+
+ const data = {
+  name:String(f.get("name")).trim(),
+  genre:f.get("genre"),
+  cost:Number(f.get("cost")),
+  address:String(f.get("address")).trim(),
+  desc:String(f.get("desc")).trim(),
+  lat:lat === "" ? null : Number(lat),
+  lng:lng === "" ? null : Number(lng),
+  seed:false,
+  createdBy:currentUser.uid,
+  createdAt:serverTimestamp()
+ };
+
+ try{
+  await addDoc(spotsRef,data);
+
+// 仮マーカーを削除
+if(selectedMarker){
+ map.removeLayer(selectedMarker);
+ selectedMarker = null;
+}
+
+// フォームをリセット
+e.target.reset();
+
+alert("投稿しました。");
+ }catch(err){
+  alert("投稿できませんでした："+err.message);
+ }
+});
+
+$("loginForm").addEventListener("submit",async e => {
+ e.preventDefault();
+
+ const f = new FormData(e.target);
+
+ try{
+  await signInWithEmailAndPassword(
+   auth,
+   String(f.get("email")),
+   String(f.get("password"))
+  );
+
+  e.target.reset();
+}catch(err){
+  alert("ログインエラー: " + err.code + "\n" + err.message);
+}
+});
+
+$("logoutButton").addEventListener("click",async() => {
+ await signOut(auth);
+});
+
+$("seedButton").addEventListener("click",async() => {
+ if(!isAdmin) return;
+
+ try{
+  const snap = await getDocs(spotsRef);
+  const existing = new Set(snap.docs.map(d => d.data().name));
+  let count = 0;
+
+  for(const s of SEED_SPOTS){
+   if(!existing.has(s.name)){
+    await addDoc(spotsRef,{
+     ...s,
+     seed:true,
+     createdBy:currentUser.uid,
+     createdAt:serverTimestamp()
+    });
+
+    count++;
+   }
+  }
+
+  alert(`${count}件の初期スポットを登録しました。`);
+ }catch(err){
+  alert("登録できませんでした："+err.message);
+ }
+});
+
+onAuthStateChanged(auth,async user => {
+ currentUser = user;
+
+ if(!user){
+  try{
+   await signInAnonymously(auth);
+  }catch(err){
+   $("status").textContent = "認証エラー："+err.message;
+  }
+  return;
+ }
+
+ isAdmin = ADMIN_UIDS.includes(user.uid);
+
+ $("adminArea").classList.toggle("hidden",!isAdmin);
+ $("loginArea").classList.toggle("hidden",isAdmin);
+
+ render();
+});
+
+onSnapshot(
+ query(spotsRef,orderBy("createdAt","desc")),
+ snap => {
+  spots = snap.docs.map(d => ({
+   id:d.id,
+   ...d.data()
+  }));
+
+  render();
+ },
+ err => {
+  $("status").textContent = "データ取得エラー："+err.message;
+ }
+);
+
+onSnapshot(
+ query(reportsRef,orderBy("createdAt","desc")),
+ snap => {
+  if(!isAdmin) return;
+
+  $("reportList").innerHTML = snap.empty
+   ? "<p class='muted'>報告はありません。</p>"
+   : snap.docs.map(d => {
+      const r = d.data();
+
+      return `
+       <div class="report">
+        <b>${esc(r.spotName)}</b>
+        <p>${esc(r.reason)}</p>
+        <small>状態：${esc(r.status)}</small>
+        <p>
+         <button class="secondary" data-resolve="${d.id}">
+          対応済みにする
+         </button>
+        </p>
+       </div>
+      `;
+     }).join("");
+ },
+ () => {}
+);
+
+$("reportList").addEventListener("click",async e => {
+ const id = e.target.dataset.resolve;
+
+ if(id && isAdmin){
+  try{
+   await updateDoc(doc(db,"reports",id),{
+    status:"対応済み"
+   });
+  }catch(err){
+   alert("更新できませんでした："+err.message);
+  }
+ }
+});
+</script>
+</body>
+</html>

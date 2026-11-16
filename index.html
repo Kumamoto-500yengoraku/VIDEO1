@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+html = r'''<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -74,7 +74,7 @@ button.secondary{background:#e9f1ec;color:var(--dark)}
 button.danger{background:#b74444}
 button:disabled{opacity:.55;cursor:not-allowed}
 .row{display:flex;gap:8px;align-items:center}
-.row>*{flex:1}
+.row>*{flex:1;min-width:0}
 #map{height:570px;border-radius:10px;z-index:1}
 .map-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}
 #status{font-size:13px;color:#557264;margin:8px 0}
@@ -154,10 +154,6 @@ footer{text-align:center;color:#718078;padding:20px;font-size:12px}
 @media(prefers-reduced-motion:reduce){
   .bear-pin{animation:none}
 }
-  0%{transform:scale(0);opacity:0}
-  70%{transform:scale(1.2);opacity:1}
-  100%{transform:scale(1);opacity:1}
-}
 </style>
 </head>
 <body>
@@ -224,50 +220,10 @@ footer{text-align:center;color:#718078;padding:20px;font-size:12px}
 <p><button type="submit">投稿する</button></p>
 </form>
 </details>
- 
+
 <div id="status">データを読み込んでいます…</div>
 <div id="spotList" class="spot-list"></div>
 
-<details class="admin-box">
-<summary>＋ スポットを投稿する</summary>
-<p class="muted">投稿には匿名認証を使用します。</p>
-
-<form id="spotForm">
-<label>スポット名</label>
-<input name="name" maxlength="80" required>
-
-<label>ジャンル</label>
-<select name="genre" required>
-<option value="グルメ">グルメ</option>
-<option value="自然">自然</option>
-<option value="観光">観光</option>
-<option value="体験">体験</option>
-</select>
-
-<label>料金（0〜500円）</label>
-<input name="cost" type="number" min="0" max="500" required>
-
-<label>住所・場所</label>
-<input name="address" maxlength="160" required>
-
-<label>紹介文</label>
-<textarea name="desc" maxlength="300" required></textarea>
-
-<div class="row">
-<div>
-<label>緯度（任意）</label>
-<input name="lat" type="number" step="any" placeholder="例：32.8031">
-</div>
-<div>
-<label>経度（任意）</label>
-<input name="lng" type="number" step="any" placeholder="例：130.7079">
-</div>
-</div>
-
-<p><button type="submit">投稿する</button></p>
-</form>
-</details>
- 
 <div id="adminArea" class="hidden">
 <div class="admin-box">
 <h2>管理者メニュー</h2>
@@ -301,8 +257,24 @@ footer{text-align:center;color:#718078;padding:20px;font-size:12px}
 <section class="map-panel">
 <div class="map-head">
 <h2>熊本市周辺のマップ</h2>
-
 </div>
+
+<!-- 施設名・住所から場所を検索 -->
+<div class="location-search">
+  <label for="locationSearch">施設名・住所から場所を検索</label>
+  <div class="row">
+    <input
+      id="locationSearch"
+      type="text"
+      placeholder="例：熊本城、熊本市役所"
+    >
+    <button id="locationSearchButton" type="button">場所を検索</button>
+  </div>
+  <p id="locationSearchStatus" class="muted">
+    検索した場所にピンを立てることができます。
+  </p>
+</div>
+
 <div id="map"></div>
 <p class="muted">地図上のマーカーを押すとスポットの詳細を確認できます。</p>
 </section>
@@ -433,34 +405,24 @@ L.tileLayer(
 ).addTo(map);
 
 const $ = id => document.getElementById(id);
+
 // 熊耳付きオリジナル地図ピン
 const bearIcon = L.divIcon({
  className:"bear-marker",
  html:`
   <div class="bear-pin">
    <svg viewBox="0 0 40 52" xmlns="http://www.w3.org/2000/svg">
-
-    <!-- 黒い小さな耳 -->
-    <circle cx="9" cy="7" r="5"
-     fill="#252b28" stroke="white" stroke-width="1.5"/>
-    <circle cx="31" cy="7" r="5"
-     fill="#252b28" stroke="white" stroke-width="1.5"/>
-
-    <!-- 黒い地図ピン本体 -->
+    <circle cx="9" cy="7" r="5" fill="#252b28" stroke="white" stroke-width="1.5"/>
+    <circle cx="31" cy="7" r="5" fill="#252b28" stroke="white" stroke-width="1.5"/>
     <path
      d="M20 50 C16 42 4 29 4 19 C4 9 11 2 20 2 C29 2 36 9 36 19 C36 29 24 42 20 50Z"
      fill="#252b28"
      stroke="white"
      stroke-width="2"
     />
-
-    <!-- 中央の白い小さな丸 -->
     <circle cx="20" cy="17" r="5" fill="white"/>
-
-    <!-- 左右の赤いほっぺ -->
     <circle cx="9" cy="22" r="2.8" fill="#e34b4b"/>
     <circle cx="31" cy="22" r="2.8" fill="#e34b4b"/>
-
    </svg>
   </div>
  `,
@@ -468,30 +430,114 @@ const bearIcon = L.divIcon({
  iconAnchor:[20,50],
  popupAnchor:[0,-48]
 });
+
 // 地図をクリックした場所の位置情報を取得
 map.on("click", function(e) {
 
- // 前に選択した仮マーカーを削除
  if(selectedMarker){
   map.removeLayer(selectedMarker);
  }
 
- // クリックした場所の緯度・経度
  const lat = e.latlng.lat;
  const lng = e.latlng.lng;
 
- // 仮マーカーを設置
- selectedMarker = L.marker([lat,lng]).addTo(map);
+ selectedMarker = L.marker([lat,lng],{icon:bearIcon}).addTo(map);
 
- // ポップアップを表示
  selectedMarker.bindPopup(
   "この場所を投稿地点に設定しました！"
  ).openPopup();
 
- // 投稿フォームに自動入力
  document.querySelector('[name="lat"]').value = lat.toFixed(6);
  document.querySelector('[name="lng"]').value = lng.toFixed(6);
 
+});
+
+// 施設名・住所から場所を検索する
+$("locationSearchButton").addEventListener("click", async () => {
+
+ const keyword = $("locationSearch").value.trim();
+
+ if(!keyword){
+  $("locationSearchStatus").textContent = "施設名や住所を入力してください。";
+  return;
+ }
+
+ const button = $("locationSearchButton");
+
+ button.disabled = true;
+ $("locationSearchStatus").textContent = "場所を検索しています…";
+
+ try{
+
+  const url =
+   "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="
+   + encodeURIComponent(keyword);
+
+  const response = await fetch(url);
+
+  if(!response.ok){
+   throw new Error("検索サービスに接続できませんでした。");
+  }
+
+  const results = await response.json();
+
+  if(results.length === 0){
+   $("locationSearchStatus").textContent =
+    "場所が見つかりませんでした。別の名前や住所で検索してください。";
+   return;
+  }
+
+  const result = results[0];
+  const lat = Number(result.lat);
+  const lng = Number(result.lon);
+
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)){
+   throw new Error("検索結果の位置情報を読み取れませんでした。");
+  }
+
+  if(selectedMarker){
+   map.removeLayer(selectedMarker);
+  }
+
+  map.setView([lat,lng],17);
+
+  selectedMarker = L.marker(
+   [lat,lng],
+   {icon:bearIcon}
+  ).addTo(map);
+
+  selectedMarker.bindPopup(
+   "検索した場所を投稿地点に設定しました！"
+  ).openPopup();
+
+  document.querySelector('[name="lat"]').value = lat.toFixed(6);
+  document.querySelector('[name="lng"]').value = lng.toFixed(6);
+
+  document.querySelector('[name="address"]').value =
+   String(result.display_name || keyword).slice(0,160);
+
+  $("locationSearchStatus").textContent =
+   "場所を設定しました！このままスポットを投稿できます。";
+
+ }catch(err){
+
+  $("locationSearchStatus").textContent =
+   "検索エラー：" + err.message;
+
+ }finally{
+
+  button.disabled = false;
+
+ }
+
+});
+
+// Enterキーでも場所を検索できるようにする
+$("locationSearch").addEventListener("keydown", e => {
+ if(e.key === "Enter"){
+  e.preventDefault();
+  $("locationSearchButton").click();
+ }
 });
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({
@@ -548,9 +594,9 @@ function render(){
    Number.isFinite(Number(s.lng))
   ){
    const marker = L.marker(
- [Number(s.lat),Number(s.lng)],
- {icon:bearIcon}
-)
+    [Number(s.lat),Number(s.lng)],
+    {icon:bearIcon}
+   )
     .addTo(map)
     .bindPopup(`
      <b>${esc(s.name)}</b><br>
@@ -650,16 +696,15 @@ $("spotForm").addEventListener("submit",async e => {
  try{
   await addDoc(spotsRef,data);
 
-// 仮マーカーを削除
-if(selectedMarker){
- map.removeLayer(selectedMarker);
- selectedMarker = null;
-}
+  if(selectedMarker){
+   map.removeLayer(selectedMarker);
+   selectedMarker = null;
+  }
 
-// フォームをリセット
-e.target.reset();
+  e.target.reset();
+  $("locationSearch").value = "";
 
-alert("投稿しました。");
+  alert("投稿しました。");
  }catch(err){
   alert("投稿できませんでした："+err.message);
  }
@@ -678,9 +723,9 @@ $("loginForm").addEventListener("submit",async e => {
   );
 
   e.target.reset();
-}catch(err){
+ }catch(err){
   alert("ログインエラー: " + err.code + "\n" + err.message);
-}
+ }
 });
 
 $("logoutButton").addEventListener("click",async() => {
@@ -792,3 +837,8 @@ $("reportList").addEventListener("click",async e => {
 </script>
 </body>
 </html>
+'''
+path = "/mnt/data/kumamoto_500yen_map_search_added.html"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(html)
+print(f"作成しました: {path}\n文字数: {len(html):,}\n行数: {len(html.splitlines()):,}")
